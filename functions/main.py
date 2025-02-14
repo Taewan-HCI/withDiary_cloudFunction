@@ -16,12 +16,10 @@ def ask_OpenAI(req: https_fn.Request) -> https_fn.Response:
     previousFeedback = req.args.get("previousFeedback")
     if inputMsg is None:
         return https_fn.Response("No input parameter", status=400)
-    
     OpenAI.api_key = os.environ.get("OPENAI_API_KEY")
     if not OpenAI.api_key:
         return ("Missing OpenAI API Key in environment variables", 500)
     client = OpenAI()
-    
     try:
         completion = client.chat.completions.create(
             model = "gpt-3.5-turbo",
@@ -31,50 +29,85 @@ def ask_OpenAI(req: https_fn.Request) -> https_fn.Response:
                     "role": "user",
                     "content": "personal stories: " + inputMsg + "\nPrevious message: " + previousFeedback
                     }
-
             ]
         )
         return jsonify({"result": completion.choices[0].message.content})
-
     except Exception as e:
         logging.exception("Error occurred in ask_OpenAI")
         return (f"Error occurred: {str(e)}", 500)
 
-
 @https_fn.on_request()
-def addmessage(req: https_fn.Request) -> https_fn.Response:
-    """Take the text parameter passed to this HTTP endpoint and insert it into
-    a new document in the messages collection."""
-    # Grab the text parameter.
-    original = req.args.get("text")
-    if original is None:
-        return https_fn.Response("No text parameter", status=400)
-    firestore_client: google.cloud.firestore.Client = firestore.client()
-    # Push the new message into Cloud Firestore using the Firebase Admin SDK.
-    _, doc_ref = firestore_client.collection("messages").add({"original": original})
-    # Send back a message that we've successfully written the message
-    return https_fn.Response(f"Message with ID {doc_ref.id} added.")
-
-
-@firestore_fn.on_document_created(document="messages/{pushId}")
-def makeuppercase(event: firestore_fn.Event[firestore_fn.DocumentSnapshot | None]) -> None:
-    """Listens for new documents to be added to /messages. If the document has
-    an "original" field, creates an "uppercase" field containg the contents of
-    "original" in upper case."""
-
-    # Get the value of "original" if it exists.
-    if event.data is None:
-        return
+def extractInsight(req: https_fn.Request) -> https_fn.Response:
+    uid = req.args.get("uid")
+    content = req.args.get("content")
+    if content is None:
+        return https_fn.Response("No content", status=400)
+    if uid is None:
+        return https_fn.Response("No uid", status=400)
+    #일기가 저장되는 시점에 전체 일기에서 중요한 문장을 추출
+    OpenAI.api_key = os.environ.get("OPENAI_API_KEY")
+    if not OpenAI.api_key:
+        return ("Missing OpenAI API Key in environment variables", 500)
+    client = OpenAI()
     try:
-        original = event.data.get("original")
-    except KeyError:
-        # No "original" field, so do nothing.
-        return
+        completion = client.chat.completions.create(
+            model = "gpt-3.5-turbo",
+            messages= [
+                {"role": "developer", "content": "I am a key quote extractor. I extract the most insightful, momorable and impactful quote from the journal entry. I do not edit the entry, I just extract and return the most most insightful, momorable and impactful quote in the journal as is."},
+                {
+                    "role": "user",
+                    "content": "Today was exhausting. I studied for eight hours straight and still feel unprepared for the exam. I realized I need to trust my instincts more instead of second-guessing every answer.Despite feeling overwhelmed, I’m proud of how much I accomplished."
+                    },
+                {
+                    "role": "assistant",
+                    "content": "I realized I need to trust my instincts more instead of second-guessing every answer."
+                    }
+            ]
+        )
+        result = jsonify({"result": completion.choices[0].message.content})
+        result_str = result.get_data(as_text=True)
+    except Exception as e:
+        logging.exception("Error occurred in ask_OpenAI")
+        return (f"Error occurred: {str(e)}", 500)
+    #Memorable quote로 사용자별 리스트에 저장
+    firestore_client: google.cloud.firestore.Client = firestore.client()
+    _, doc_ref = firestore_client.collection("user").doc(uid).collection("insights").add({"original": result_str})
+    return https_fn.Response(f"insight added.")
 
-    # Set the "uppercase" field.
-    print(f"Uppercasing {event.params['pushId']}: {original}")
-    upper = original.upper()
-    event.data.reference.update({"uppercase": upper})
+
+# @https_fn.on_request()
+# def addmessage(req: https_fn.Request) -> https_fn.Response:
+#     """Take the text parameter passed to this HTTP endpoint and insert it into
+#     a new document in the messages collection."""
+#     # Grab the text parameter.
+#     original = req.args.get("text")
+#     if original is None:
+#         return https_fn.Response("No text parameter", status=400)
+#     firestore_client: google.cloud.firestore.Client = firestore.client()
+#     # Push the new message into Cloud Firestore using the Firebase Admin SDK.
+#     _, doc_ref = firestore_client.collection("messages").add({"original": original})
+#     # Send back a message that we've successfully written the message
+#     return https_fn.Response(f"Message with ID {doc_ref.id} added.")
+
+
+
+# @firestore_fn.on_document_created(document="messages/{pushId}")
+# def makeuppercase(event: firestore_fn.Event[firestore_fn.DocumentSnapshot | None]) -> None:
+#     """Listens for new documents to be added to /messages. If the document has
+#     an "original" field, creates an "uppercase" field containg the contents of
+#     "original" in upper case."""
+#     # Get the value of "original" if it exists.
+#     if event.data is None:
+#         return
+#     try:
+#         original = event.data.get("original")
+#     except KeyError:
+#         # No "original" field, so do nothing.
+#         return
+#     # Set the "uppercase" field.
+#     print(f"Uppercasing {event.params['pushId']}: {original}")
+#     upper = original.upper()
+#     event.data.reference.update({"uppercase": upper})
 
 
 
