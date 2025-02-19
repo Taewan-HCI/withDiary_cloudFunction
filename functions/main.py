@@ -70,6 +70,14 @@ def extractInsight(req: https_fn.Request) -> https_fn.Response:
                 },
                 {
                     "role": "user",
+                    "content": "Today was ajsd"
+                },
+                {
+                    "role": "assistant",
+                    "content": "No quote"
+                },
+                {
+                    "role": "user",
                     "content": content
                 }
             ]
