@@ -59,7 +59,7 @@ def extractInsight(req: https_fn.Request) -> https_fn.Response:
         completion = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "developer", "content": "I am a key quote extractor. I extract the most insightful, memorable, and impactful quote from the journal entry. I do not edit the entry, I just extract and return the most insightful, memorable, and impactful quote in the journal as is."},
+                {"role": "developer", "content": "I am a key quote extractor. I extract the most insightful, memorable, and impactful quote from the journal entry. I do not edit the entry, I just extract and return the most insightful, memorable, and impactful quote in the journal as is. If there are no quote to extract, just return [No quote]"},
                 {
                     "role": "user",
                     "content": "Today was exhausting. I studied for eight hours straight and still feel unprepared for the exam. I realized I need to trust my instincts more instead of second-guessing every answer. Despite feeling overwhelmed, I’m proud of how much I accomplished."
