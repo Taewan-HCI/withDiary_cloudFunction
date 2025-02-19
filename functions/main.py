@@ -6,6 +6,8 @@ from flask import jsonify
 import os
 from openai import OpenAI
 import logging
+import datetime
+
 
 app = initialize_app()
 
@@ -40,39 +42,57 @@ def ask_OpenAI(req: https_fn.Request) -> https_fn.Response:
 def extractInsight(req: https_fn.Request) -> https_fn.Response:
     uid = req.args.get("uid")
     content = req.args.get("content")
+    diaryID = req.args.get("diaryID")
     if content is None:
         return https_fn.Response("No content", status=400)
     if uid is None:
         return https_fn.Response("No uid", status=400)
-    #일기가 저장되는 시점에 전체 일기에서 중요한 문장을 추출
+
+    # OpenAI API 키 설정
     OpenAI.api_key = os.environ.get("OPENAI_API_KEY")
     if not OpenAI.api_key:
-        return ("Missing OpenAI API Key in environment variables", 500)
+        return https_fn.Response("Missing OpenAI API Key in environment variables", status=500)
+
     client = OpenAI()
+    
     try:
         completion = client.chat.completions.create(
-            model = "gpt-3.5-turbo",
-            messages= [
-                {"role": "developer", "content": "I am a key quote extractor. I extract the most insightful, momorable and impactful quote from the journal entry. I do not edit the entry, I just extract and return the most most insightful, momorable and impactful quote in the journal as is."},
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "developer", "content": "I am a key quote extractor. I extract the most insightful, memorable, and impactful quote from the journal entry. I do not edit the entry, I just extract and return the most insightful, memorable, and impactful quote in the journal as is."},
                 {
                     "role": "user",
-                    "content": "Today was exhausting. I studied for eight hours straight and still feel unprepared for the exam. I realized I need to trust my instincts more instead of second-guessing every answer.Despite feeling overwhelmed, I’m proud of how much I accomplished."
-                    },
+                    "content": "Today was exhausting. I studied for eight hours straight and still feel unprepared for the exam. I realized I need to trust my instincts more instead of second-guessing every answer. Despite feeling overwhelmed, I’m proud of how much I accomplished."
+                },
                 {
                     "role": "assistant",
                     "content": "I realized I need to trust my instincts more instead of second-guessing every answer."
-                    }
+                },
+                {
+                    "role": "user",
+                    "content": content
+                }
             ]
         )
-        result = jsonify({"result": completion.choices[0].message.content})
-        result_str = result.get_data(as_text=True)
+        result = completion.choices[0].message.content.strip()
     except Exception as e:
         logging.exception("Error occurred in ask_OpenAI")
-        return (f"Error occurred: {str(e)}", 500)
-    #Memorable quote로 사용자별 리스트에 저장
+        return https_fn.Response(f"Error occurred: {str(e)}", status=500)
+
+    # Firestore 클라이언트 생성
     firestore_client: google.cloud.firestore.Client = firestore.client()
-    _, doc_ref = firestore_client.collection("user").doc(uid).collection("insights").add({"original": result_str})
-    return https_fn.Response(f"insight added.")
+
+    # 사용자 insights -> dailyQuotes 문서 참조
+    doc_ref = firestore_client.collection("user").document(uid).collection("diary").document(diaryID)
+
+    try:
+        # Firestore 업데이트 (병합 저장, insight 필드를 문자열 값으로 설정)
+        doc_ref.set({"insight": result}, merge=True)
+
+        return https_fn.Response(f"Insight updated: {result}")
+    except Exception as e:
+        logging.exception("Error occurred while updating Firestore")
+        return https_fn.Response(f"Error occurred: {str(e)}", status=500)
 
 
 # @https_fn.on_request()
